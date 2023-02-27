@@ -13,7 +13,7 @@ from homeassistant.components.climate.const import (
     PRESET_HOME,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
+from homeassistant.const import ATTR_TEMPERATURE, TEMP_CELSIUS
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from vaillant_netatmo_api import ApiException, SetpointMode, SystemMode
@@ -77,7 +77,7 @@ class VaillantClimate(VaillantEntity, ClimateEntity):
     def temperature_unit(self) -> str:
         """Return the measurement unit for all temperature values."""
 
-        return UnitOfTemperature.CELSIUS
+        return TEMP_CELSIUS
 
     @property
     def current_temperature(self) -> float:
@@ -89,11 +89,7 @@ class VaillantClimate(VaillantEntity, ClimateEntity):
     def target_temperature(self) -> float:
         """Return the targeted room temperature."""
 
-        return (
-            self._module.measured.est_setpoint_temp
-            if self._module.measured.est_setpoint_temp is not None
-            else self._module.measured.setpoint_temp
-        )
+        return self._module.measured.setpoint_temp
 
     @property
     def hvac_modes(self) -> list[HVACMode]:
@@ -124,8 +120,11 @@ class VaillantClimate(VaillantEntity, ClimateEntity):
         if self._device.system_mode == SystemMode.FROSTGUARD:
             return HVACAction.OFF
 
-        if self._module.boiler_status == True:
-            return HVACAction.HEATING
+        try:
+            if self._module.measured.temperature < self._module.measured.setpoint_temp:
+                return HVACAction.HEATING
+        except TypeError:
+            pass
 
         return HVACAction.IDLE
 

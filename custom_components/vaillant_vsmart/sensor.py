@@ -1,6 +1,5 @@
 """The Vaillant vSMART climate platform."""
 from __future__ import annotations
-
 from datetime import datetime
 
 import logging
@@ -34,7 +33,6 @@ async def async_setup_entry(
         for device in coordinator.data.devices.values()
         for module in device.modules
     ]
-
     new_devices += [
         VaillantGasWaterSensor(coordinator, device.id, module.id)
         for device in coordinator.data.devices.values()
@@ -93,6 +91,7 @@ class VaillantBatterySensor(VaillantEntity, SensorEntity):
         """Return unit of measurement for the battery level."""
 
         return PERCENTAGE
+
 
 class VaillantGasWaterSensor(VaillantEntity, SensorEntity):
     """Vaillant vSMART Sensor."""

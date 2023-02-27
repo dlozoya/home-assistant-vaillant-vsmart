@@ -1,5 +1,6 @@
 """Vaillant vSMART entity classes."""
-from datetime import timedelta
+import asyncio
+from datetime import datetime, timedelta
 import logging
 from typing import Any
 
@@ -16,6 +17,9 @@ from vaillant_netatmo_api import (
     Module,
     Program,
     ThermostatClient,
+    MeasurementItem,
+    MeasurementType,
+    MeasurementScale,
     RequestUnauthorizedException,
 )
 
@@ -71,13 +75,136 @@ class VaillantCoordinator(DataUpdateCoordinator[VaillantData]):
 
         try:
             devices = await self._client.async_get_thermostats_data()
-            energy_usage = await self._get_energy_usage_measurements_for_all_devices(devices)
+
+            measurements = await self._get_temperature_measurements_for_all_devices(
+                devices
+            )
+
+            energy_usage = await self._get_energy_usage_measurements_for_all_devices(
+                devices
+            )
+
+            self._debug_log(devices)
+            self._update_measured_data(devices, measurements, energy_usage)
+            self._debug_log(devices)
+
             return VaillantData(self._client, devices)
         except RequestUnauthorizedException as ex:
             raise ConfigEntryAuthFailed from ex
         except ApiException as ex:
             _LOGGER.exception(ex)
             raise UpdateFailed(f"Error communicating with API: {ex}") from ex
+
+    async def _get_temperature_measurements_for_all_devices(
+        self, devices: list[Device]
+    ) -> list[list[MeasurementItem]]:
+        temperature_tasks = []
+
+        start_time = datetime.now() - timedelta(hours=1)
+
+        for device in devices:
+            for module in device.modules:
+                current_temp_task = self._client.async_get_measure(
+                    device.id,
+                    module.id,
+                    MeasurementType.TEMPERATURE,
+                    MeasurementScale.MAX,
+                    start_time,
+                )
+                temperature_tasks.append(current_temp_task)
+
+                setpoint_temp_task = self._client.async_get_measure(
+                    device.id,
+                    module.id,
+                    MeasurementType.SETPOINT_TEMPERATURE,
+                    MeasurementScale.MAX,
+                    start_time,
+                )
+                temperature_tasks.append(setpoint_temp_task)
+
+        return await asyncio.gather(*temperature_tasks)
+
+    async def _get_energy_usage_measurements_for_all_devices(
+        self, devices: list[Device]
+    ) -> list[list[MeasurementItem]]:
+        gas_usage_tasks = []
+
+        start_time = datetime.now() - timedelta(days=7)
+
+        for device in devices:
+            for module in device.modules:
+                gas_heating_task = self._client.async_get_measure(
+                    device.id,
+                    module.id,
+                    MeasurementType.SUM_ENERGY_GAS_HEATING,
+                    MeasurementScale.DAY,
+                    start_time,
+                )
+                gas_usage_tasks.append(gas_heating_task)
+
+                gas_water_task = self._client.async_get_measure(
+                    device.id,
+                    module.id,
+                    MeasurementType.SUM_ENERGY_GAS_WATER,
+                    MeasurementScale.DAY,
+                    start_time,
+                )
+                gas_usage_tasks.append(gas_water_task)
+
+        return await asyncio.gather(*gas_usage_tasks)
+
+    def _debug_log(self, devices: list[Device]) -> None:
+        for device in devices:
+            for module in device.modules:
+                _LOGGER.debug(f"_temperature_: {module.measured.temperature}")
+                _LOGGER.debug(f"setpoint_temp: {module.measured.setpoint_temp}")
+                _LOGGER.debug(f"gas_heating_usage: {module.measured.gas_heating_usage}")
+                _LOGGER.debug(f"gas_water_usage: {module.measured.gas_water_usage}")
+
+    def _update_measured_data(
+        self,
+        devices: list[Device],
+        measurements: list[list[MeasurementItem]],
+        energy_usage: list[list[MeasurementItem]],
+    ) -> None:
+        i = 0
+
+        for device in devices:
+            for module in device.modules:
+                module.measured.temperature = self._get_measurement_value(
+                    measurements[i], module.measured.temperature
+                )
+                module.measured.setpoint_temp = self._get_measurement_value(
+                    measurements[i + 1], module.measured.setpoint_temp
+                )
+
+                module.measured.gas_heating_usage = self._get_energy_measurement_value(
+                    energy_usage[i], module.measured.gas_heating_usage
+                )
+
+                module.measured.gas_water_usage = self._get_energy_measurement_value(
+                    energy_usage[i + 1], module.measured.gas_water_usage
+                )
+
+                i += 2
+
+    def _get_measurement_value(
+        self,
+        measurements: list[MeasurementItem],
+        default_value: float,
+    ) -> float:
+        measure = measurements[-1] if measurements else None
+
+        return measure.value[-1] if measure and measure.value else default_value
+
+    def _get_energy_measurement_value(
+        self,
+        measurements: list[MeasurementItem],
+        default_value: list[float],
+    ) -> list[float]:
+        measure = measurements[-1] if measurements else None
+
+        return measure.value if measure and measure.value else default_value
 
 
 class VaillantEntity(CoordinatorEntity[VaillantData]):
