@@ -1,6 +1,8 @@
 """The Vaillant vSMART climate platform."""
 from __future__ import annotations
 
+from datetime import datetime
+
 import logging
 
 from homeassistant.components.sensor import (
@@ -9,7 +11,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE
+from homeassistant.const import PERCENTAGE, ENERGY_WATT_HOUR
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -32,6 +34,18 @@ async def async_setup_entry(
         for device in coordinator.data.devices.values()
         for module in device.modules
     ]
+
+    new_devices += [
+        VaillantGasWaterSensor(coordinator, device.id, module.id)
+        for device in coordinator.data.devices.values()
+        for module in device.modules
+    ]
+    new_devices += [
+        VaillantGasHeatingSensor(coordinator, device.id, module.id)
+        for device in coordinator.data.devices.values()
+        for module in device.modules
+    ]
+
     async_add_devices(new_devices)
 
 
@@ -79,3 +93,110 @@ class VaillantBatterySensor(VaillantEntity, SensorEntity):
         """Return unit of measurement for the battery level."""
 
         return PERCENTAGE
+
+class VaillantGasWaterSensor(VaillantEntity, SensorEntity):
+    """Vaillant vSMART Sensor."""
+
+    @property
+    def unique_id(self) -> str:
+        """Return a unique ID to use for this entity."""
+
+        return f"{self._module.id}_gas_water"
+
+    @property
+    def name(self) -> str:
+        """Return the name of the sensor."""
+
+        return f"{self._module.module_name} Water Gas usage"
+
+    @property
+    def entity_category(self) -> EntityCategory:
+        """Return entity category for this sensor."""
+
+        return EntityCategory.DIAGNOSTIC
+
+    @property
+    def device_class(self) -> SensorDeviceClass:
+        """Return device class for this sensor."""
+
+        return SensorDeviceClass.ENERGY
+
+    @property
+    def state_class(self) -> SensorStateClass:
+        """Return state class for this sensor."""
+
+        return SensorStateClass.TOTAL_INCREASING
+
+    @property
+    def native_value(self) -> str:
+        """Return current value of gas water usage."""
+
+        return str(
+            self._module.measured.gas_water_usage[
+                self._module.measured.gas_water_usage.__len__() - 1
+            ]
+        )
+
+    @property
+    def extra_state_attributes(self):
+        return {"historical_values": str(self._module.measured.gas_water_usage)}
+
+    @property
+    def native_unit_of_measurement(self) -> str:
+        """Return unit of measurement for gas water usage"""
+
+        return ENERGY_WATT_HOUR
+
+
+class VaillantGasHeatingSensor(VaillantEntity, SensorEntity):
+    """Vaillant vSMART Sensor."""
+
+    @property
+    def unique_id(self) -> str:
+        """Return a unique ID to use for this entity."""
+
+        return f"{self._module.id}_gas_heating"
+
+    @property
+    def name(self) -> str:
+        """Return the name of the sensor."""
+
+        return f"{self._module.module_name} Heating Gas usage"
+
+    @property
+    def entity_category(self) -> EntityCategory:
+        """Return entity category for this sensor."""
+
+        return EntityCategory.DIAGNOSTIC
+
+    @property
+    def device_class(self) -> SensorDeviceClass:
+        """Return device class for this sensor."""
+
+        return SensorDeviceClass.ENERGY
+
+    @property
+    def state_class(self) -> SensorStateClass:
+        """Return state class for this sensor."""
+
+        return SensorStateClass.TOTAL_INCREASING
+
+    @property
+    def native_value(self) -> str:
+        """Return current value of gas heating usage."""
+
+        return str(
+            self._module.measured.gas_heating_usage[
+                self._module.measured.gas_heating_usage.__len__() - 1
+            ]
+        )
+
+    @property
+    def extra_state_attributes(self):
+        return {"historical_values": str(self._module.measured.gas_heating_usage)}
+
+    @property
+    def native_unit_of_measurement(self) -> str:
+        """Return unit of measurement for gas heating usage."""
+
+        return ENERGY_WATT_HOUR

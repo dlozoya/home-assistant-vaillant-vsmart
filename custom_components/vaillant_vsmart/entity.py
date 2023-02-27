@@ -71,7 +71,7 @@ class VaillantCoordinator(DataUpdateCoordinator[VaillantData]):
 
         try:
             devices = await self._client.async_get_thermostats_data()
-
+            energy_usage = await self._get_energy_usage_measurements_for_all_devices(devices)
             return VaillantData(self._client, devices)
         except RequestUnauthorizedException as ex:
             raise ConfigEntryAuthFailed from ex
